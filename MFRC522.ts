@@ -39,7 +39,7 @@ namespace MFRC522 {
 
     function SetBits(reg: number, mask: number) {
         let tmp = SPI_Read(reg)
-        SPI_Write(reg, (tmp | mask))
+        SPI_Write(reg, tmp | mask)
     }
 
     function SPI_Write(adr: number, val: number) {
@@ -50,10 +50,14 @@ namespace MFRC522 {
     }
 
     function readFromCard(): string {
-        let [status, Type2] = Request(PICC_REQIDL)
+        let reqResult = Request(PICC_REQIDL)
+        status = reqResult[0]
+        Type2 = reqResult[1]
         if (status != 0) return ""
 
-        [status, uid] = AvoidColl()
+        let avoidResult = AvoidColl()
+        status = avoidResult[0]
+        uid = avoidResult[1]
         if (status != 0) return ""
 
         let text_read = ''
@@ -61,8 +65,8 @@ namespace MFRC522 {
 
         for (let BlockNum of BlockAdr) {
             let block = ReadRFID(BlockNum)
-            if (block) {
-                data = data.concat(block)
+            if (block != null) {
+                data = data.concat(block as number[])
             }
         }
 
@@ -82,10 +86,14 @@ namespace MFRC522 {
     }
 
     function writeToCard(txt: string): number {
-        [status, Type2] = Request(PICC_REQIDL)
+        let reqResult = Request(PICC_REQIDL)
+        status = reqResult[0]
+        Type2 = reqResult[1]
         if (status != 0) return null
 
-        [status, uid] = AvoidColl()
+        let avoidResult = AvoidColl()
+        status = avoidResult[0]
+        uid = avoidResult[1]
         if (status != 0) return null
 
         let data: number[] = []
@@ -93,7 +101,7 @@ namespace MFRC522 {
             data.push(txt.charCodeAt(i))
         }
         for (let j = txt.length; j < 48; j++) {
-            data.push(32)  // pad with spaces
+            data.push(32)
         }
 
         let b = 0
@@ -113,7 +121,10 @@ namespace MFRC522 {
         let pOut2 = CRC_Calculation(recvData)
         recvData.push(pOut2[0])
         recvData.push(pOut2[1])
-        let [status, returnData, returnLen] = MFRC522_ToCard(PCD_TRANSCEIVE, recvData)
+        let result = MFRC522_ToCard(PCD_TRANSCEIVE, recvData)
+        status = result[0]
+        returnData = result[1]
+        returnLen = result[2]
 
         if (status != 0) {
             serial.writeLine("Error while reading!")
@@ -131,11 +142,14 @@ namespace MFRC522 {
         SPI_Write(reg, tmp & (~mask))
     }
 
-    function Request(reqMode: number): [number, any] {
+    function Request(reqMode: number): [number, number] {
         let Type: number[] = []
         SPI_Write(BitFramingReg, 0x07)
         Type.push(reqMode)
-        let [status, returnData, returnBits] = MFRC522_ToCard(PCD_TRANSCEIVE, Type)
+        let result = MFRC522_ToCard(PCD_TRANSCEIVE, Type)
+        status = result[0]
+        returnData = result[1]
+        returnBits = result[2]
 
         if ((status != 0) || (returnBits != 16)) {
             status = 2
@@ -152,12 +166,14 @@ namespace MFRC522 {
     }
 
     function AvoidColl(): [number, number[]] {
-        let SerNum = []
+        let SerNum: number[] = []
         ChkSerNum = 0
         SPI_Write(BitFramingReg, 0)
         SerNum.push(PICC_ANTICOLL)
         SerNum.push(0x20)
-        let [status, returnData, returnBits] = MFRC522_ToCard(PCD_TRANSCEIVE, SerNum)
+        let result = MFRC522_ToCard(PCD_TRANSCEIVE, SerNum)
+        status = result[0]
+        returnData = result[1]
 
         if (status == 0) {
             if (returnData.length == 5) {
@@ -171,6 +187,7 @@ namespace MFRC522 {
                 status = 2
             }
         }
+
         return [status, returnData]
     }
 
@@ -193,9 +210,10 @@ namespace MFRC522 {
         SetBits(FIFOLevelReg, 0x80)
         SPI_Write(CommandReg, PCD_IDLE)
 
-        for (let o = 0; o < (sendData.length); o++) {
+        for (let o = 0; o < sendData.length; o++) {
             SPI_Write(FIFODataReg, sendData[o])
         }
+
         SPI_Write(CommandReg, command)
 
         if (command == PCD_TRANSCEIVE) {
@@ -210,6 +228,7 @@ namespace MFRC522 {
                 break
             }
         }
+
         ClearBits(BitFramingReg, 0x80)
 
         if (p != 0) {
@@ -218,6 +237,7 @@ namespace MFRC522 {
                 if (n & irqEN & 0x01) {
                     status = 1
                 }
+
                 if (command == PCD_TRANSCEIVE) {
                     n = SPI_Read(FIFOLevelReg)
                     lastBits = SPI_Read(ControlReg) & 0x07
@@ -247,7 +267,7 @@ namespace MFRC522 {
     function CRC_Calculation(DataIn: number[]) {
         ClearBits(DivIrqReg, 0x04)
         SetBits(FIFOLevelReg, 0x80)
-        for (let s = 0; s < (DataIn.length); s++) {
+        for (let s = 0; s < DataIn.length; s++) {
             SPI_Write(FIFODataReg, DataIn[s])
         }
         SPI_Write(CommandReg, 0x03)
@@ -276,7 +296,11 @@ namespace MFRC522 {
         crc = CRC_Calculation(buff)
         buff.push(crc[0])
         buff.push(crc[1])
-        let [status, returnData, returnLen] = MFRC522_ToCard(PCD_TRANSCEIVE, buff)
+        let result = MFRC522_ToCard(PCD_TRANSCEIVE, buff)
+        status = result[0]
+        returnData = result[1]
+        returnLen = result[2]
+
         if ((status != 0) || (returnLen != 4) || ((returnData[0] & 0x0F) != 0x0A)) {
             status = 2
             serial.writeLine("ERROR")
@@ -290,7 +314,11 @@ namespace MFRC522 {
             crc = CRC_Calculation(buff2)
             buff2.push(crc[0])
             buff2.push(crc[1])
-            let [status, returnData, returnLen] = MFRC522_ToCard(PCD_TRANSCEIVE, buff2)
+            let result2 = MFRC522_ToCard(PCD_TRANSCEIVE, buff2)
+            status = result2[0]
+            returnData = result2[1]
+            returnLen = result2[2]
+
             if ((status != 0) || (returnLen != 4) || ((returnData[0] & 0x0F) != 0x0A)) {
                 serial.writeLine("Error while writing")
             } else {
@@ -308,10 +336,13 @@ namespace MFRC522 {
     }
 
     function readID() {
-        [status, Type2] = Request(PICC_REQIDL)
+        let reqResult = Request(PICC_REQIDL)
+        status = reqResult[0]
         if (status != 0) return null
 
-        [status, uid] = AvoidColl()
+        let avoidResult = AvoidColl()
+        status = avoidResult[0]
+        uid = avoidResult[1]
         if (status != 0) return null
 
         return getIDNum(uid)
@@ -338,11 +369,9 @@ namespace MFRC522 {
     //% weight=95
     export function getID() {
         let id = readID()
-        while (!(id)) {
+        while (!id) {
             id = readID()
-            if (id != undefined) {
-                return id
-            }
+            if (id != undefined) return id
         }
         return id
     }
@@ -353,9 +382,7 @@ namespace MFRC522 {
         let text = readFromCard()
         while (!text) {
             text = readFromCard()
-            if (text != '') {
-                return text
-            }
+            if (text != '') return text
         }
         return text
     }
@@ -367,9 +394,7 @@ namespace MFRC522 {
         let id = writeToCard(text)
         while (!id) {
             id = writeToCard(text)
-            if (id != undefined) {
-                return
-            }
+            if (id != undefined) return
         }
         return
     }
